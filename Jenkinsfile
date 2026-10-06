@@ -4,11 +4,12 @@ pipeline {
     triggers { pollSCM('H/2 * * * *') }
 
     environment {
-        APP_ENV    = 'production'
-        APP_TITLE  = 'Live Chat'
-        JOIN_CODE  = credentials('chat-join-code')
-        DH         = credentials('dockerhub-creds')
-        IMAGE      = 'thirudocker004/livechat'
+        APP_ENV   = 'production'
+        APP_TITLE = 'Live Chat'
+        HOST_PORT = '3200'
+        IMAGE     = 'thirudocker004/livechat'
+        JOIN_CODE = credentials('chat-join-code')
+        DH        = credentials('dockerhub-creds')
     }
 
     stages {
@@ -29,6 +30,7 @@ pipeline {
                   docker run -d --name livechat-test -e APP_ENV -e APP_TITLE -e JOIN_CODE $IMAGE:${BUILD_NUMBER}
                   sleep 4
                   docker exec livechat-test node -e "require('http').get('http://localhost:3000/health',r=>process.exit(r.statusCode==200?0:1)).on('error',()=>process.exit(1))"
+                  echo "Test passed"
                 '''
             }
             post {
@@ -42,6 +44,7 @@ pipeline {
                   echo "$DH_PSW" | docker login -u "$DH_USR" --password-stdin
                   docker push $IMAGE:${BUILD_NUMBER}
                   docker push $IMAGE:latest
+                  docker logout
                 '''
             }
         }
@@ -50,7 +53,16 @@ pipeline {
             steps {
                 sh '''
                   docker rm -f livechat || true
-                  docker run -d --name livechat --restart unless-stopped -p 3100:3000 \
+
+                  if docker ps --format '{{.Names}} {{.Ports}}' | grep -q ":${HOST_PORT}->"; then
+                    echo "ERROR: port ${HOST_PORT} is already used by another container:"
+                    docker ps --format '{{.Names}} {{.Ports}}' | grep ":${HOST_PORT}->"
+                    echo "Stop it or change HOST_PORT in the Jenkinsfile."
+                    exit 1
+                  fi
+
+                  docker run -d --name livechat --restart unless-stopped \
+                    -p ${HOST_PORT}:3000 \
                     -e APP_ENV -e APP_TITLE -e JOIN_CODE -e BUILD_NUMBER \
                     $IMAGE:${BUILD_NUMBER}
                 '''
@@ -69,11 +81,8 @@ pipeline {
     }
 
     post {
-        success { echo "Deployed build ${BUILD_NUMBER}. Open http://localhost:3100" }
+        success { echo "Deployed build ${BUILD_NUMBER}. Open http://localhost:${HOST_PORT}" }
         failure { echo 'Pipeline failed, check the stage that turned red' }
-        always  {
-            sh 'docker logout || true'
-            sh 'docker image prune -f'
-        }
+        always  { sh 'docker image prune -f || true' }
     }
 }
