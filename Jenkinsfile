@@ -5,7 +5,7 @@ pipeline {
 
     environment {
         APP_ENV   = 'production'
-        APP_TITLE = 'Live Chat'
+        APP_TITLE = 'Team Chat v2'
         HOST_PORT = '3200'
         IMAGE     = 'thirudocker004/livechat'
         JOIN_CODE = credentials('chat-join-code')
